@@ -392,3 +392,59 @@ function Base.show(io::IO, l::GroupNorm)
   (l.λ == identity) || print(io, ", λ = $(l.λ)")
   print(io, ")")
 end
+
+"""
+    LRNorm(α, β, n, k)
+Local Response Normalization layer. The `n` input should be the number of 
+adjacent kernel maps to sum over.
+See [ImageNet Classification with Deep Convolutional
+Neural Networks](https://papers.nips.cc/paper/4824-imagenet-classification-with-deep-convolutional-neural-networks.pdf).
+
+Example : 
+```julia
+m = LRNorm(0.0001, 0.75, 5, 2.0)
+m(x) #x is a 4-D input
+```
+"""
+mutable struct LRNorm{F, V, W, N}
+  α :: F
+  β :: V
+  n :: W
+  k :: N
+  active :: Bool
+end
+
+LRNorm(α = 10.0 ^ (-4), β = 0.75, n = 5, k = 2.0) = LRNorm(α, β, n, k, true)
+
+function (lrn::LRNorm)(x)
+  num_channels = size(x, 3)
+  norm_term = 0
+  prev_channel = 0
+  curr_channel = 0
+  y = ones(size(x))
+  for i in CartesianIndices(x)
+    curr_channel = i[3]
+    if curr_channel != prev_channel  #norm_term is set to zero and re-computed for every new channel
+      norm_term = 0
+      prev_channel = curr_channel
+    end
+    lower_lim = max(1, trunc(Int, i[3] + 1 - lrn.n/2))
+    upper_lim = min(num_channels, trunc(Int, i[3] + 1 + lrn.n/2))
+    for j in lower_lim:upper_lim
+      norm_term += lrn.α * (x[i[1],i[2], j, i[4]]) ^ 2   #Runs over adjacent kernel maps at the same spatial location
+    end
+    norm_term += lrn.k
+    norm_term = norm_term ^ lrn.β
+    norm_term = norm_term.data
+    y[i] = y[i] / norm_term
+  end
+  return y .* x
+end
+
+children(lrn::LRNorm) =
+  (lrn.α, lrn.β, lrn.n, lrn.k, lrn.active)
+
+mapchildren(f, lrn::LRNorm) =  # e.g. mapchildren(cu, BN)
+  LRNorm(lrn.α, f(lrn.β), f(lrn.n), f(lrn.k), lrn.active)
+
+_testmode!(lrn::LRNorm, test) = (lrn.active = !test)
