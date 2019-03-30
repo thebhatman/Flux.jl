@@ -418,16 +418,9 @@ LRNorm(α = 10.0 ^ (-4), β = 0.75, n = 5, k = 2.0) = LRNorm(α, β, n, k, true)
 
 function (lrn::LRNorm)(x)
   num_channels = size(x, 3)
-  norm_term = 0
-  prev_channel = 0
-  curr_channel = 0
   y = ones(size(x))
   for i in CartesianIndices(x)
-    curr_channel = i[3]
-    if curr_channel != prev_channel  #norm_term is set to zero and re-computed for every new channel
-      norm_term = 0
-      prev_channel = curr_channel
-    end
+    norm_term = 0   #norm_term set to zero for every spatial location
     lower_lim = max(1, trunc(Int, i[3] + 1 - lrn.n/2))
     upper_lim = min(num_channels, trunc(Int, i[3] + 1 + lrn.n/2))
     for j in lower_lim:upper_lim
@@ -436,7 +429,7 @@ function (lrn::LRNorm)(x)
     norm_term += lrn.k
     norm_term = norm_term ^ lrn.β
     norm_term = norm_term.data
-    y[i] = y[i] / norm_term
+    y[i] = y[i] / norm_term     #Every spatial location normalised.
   end
   return y .* x
 end
